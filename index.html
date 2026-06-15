@@ -36,6 +36,7 @@
     .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}.section-title{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
     .badge-ok,.badge-bad,.badge-warn{font-weight:800;border-radius:8px;padding:3px 7px;display:inline-block}.badge-ok{background:#ecfdf3;color:#166534}.badge-bad{background:#fef2f2;color:#991b1b}.badge-warn{background:#fff7ed;color:#9a3412;border:1px solid #fed7aa}
     .mini-input{min-width:80px;width:80px;padding:8px}.mini-date{min-width:130px;width:130px;padding:8px}.mini-time{min-width:95px;width:95px;padding:8px}.inline-edit{display:flex;gap:6px;align-items:center;flex-wrap:nowrap}
+    .evidence-actions{display:flex;gap:6px;align-items:center;flex-wrap:wrap}.evidence-actions button{padding:8px 10px;font-size:12px}.evidence-actions a{display:inline-block;padding:8px 10px;border-radius:10px;background:var(--surface2);border:1px solid var(--line);color:var(--text);font-weight:800;text-decoration:none;font-size:12px}
 
     .group-standings-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(360px,1fr));gap:16px;margin-top:14px}
     .group-card{background:var(--surface2);color:var(--text);border-radius:16px;padding:14px;border:1px solid var(--line);box-shadow:var(--shadow)}
@@ -127,6 +128,8 @@ const SUPABASE_KEY = "sb_publishable_-2YINgmDVu6gHakyIxecpg_oFrbExk_";
 const db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
 const T = {users:"users",resFG:"res_f_g",resFE:"res_f_e",resTabla:"res_tabla_de_grupos",resBonus:"res_bonus",partFG:"part_f_g",partFE:"part_f_e",partMej3:"part_mej_3ros",partBonus:"part_bonus"};
+const EVIDENCE_BUCKET = "evidencias_resultados";
+const EVIDENCE_COLUMN = "evidencia_url";
 let currentUser=null, allUsers=[], currentView="home", resFGCache=[], resFECache=[], bonusCache=[];
 const SESSION_KEY = "quiniela_mundial_session";
 const PUNTOS_ESTIMADOS_POR_PARTIDO = 3;
@@ -630,17 +633,61 @@ async function actualizarLlavesSiguientes(){
   await ensureCaches(true);
 }
 
+
+function getEvidenceUrl(r){
+  return r?.evidencia_url || r?.evidencia || r?.evidencia_img || r?.url_evidencia || "";
+}
+
+function evidenceActions(type,id,r){
+  const url = getEvidenceUrl(r);
+  let html = `<div class="evidence-actions">`;
+  if(isAdmin()) html += `<button class="secondary" onclick="uploadEvidence('${type}','${escapeHtml(id)}')">Subir captura</button>`;
+  if(url) html += `<a href="${escapeHtml(url)}" target="_blank" rel="noopener">Ver evidencia</a>`;
+  html += `</div>`;
+  return html;
+}
+
+async function uploadEvidence(type,id){
+  if(!isAdmin()) return;
+  const table = type === "fg" ? T.resFG : T.resFE;
+  const key = type === "fg" ? "Id_Match" : "Id_match";
+  const input = document.createElement("input");
+  input.type = "file";
+  input.accept = "image/*";
+  input.onchange = async () => {
+    const file = input.files && input.files[0];
+    if(!file) return;
+    const ext = (file.name.split(".").pop() || "jpg").toLowerCase().replace(/[^a-z0-9]/g,"") || "jpg";
+    const path = `${type}/${id}_${Date.now()}.${ext}`;
+    const up = await db.storage.from(EVIDENCE_BUCKET).upload(path, file, {upsert:true, contentType:file.type || "image/jpeg"});
+    if(up.error){
+      alert(`No se pudo subir la captura. Revisa que exista el bucket "${EVIDENCE_BUCKET}" en Supabase Storage y que tenga permisos de upload.\n\n${up.error.message}`);
+      return;
+    }
+    const pub = db.storage.from(EVIDENCE_BUCKET).getPublicUrl(path);
+    const publicUrl = pub?.data?.publicUrl || "";
+    const {error} = await db.from(table).update({[EVIDENCE_COLUMN]: publicUrl}).eq(key,id);
+    if(error){
+      alert(`La imagen subió, pero no se pudo guardar la referencia en la tabla. Revisa que exista la columna "${EVIDENCE_COLUMN}".\n\n${error.message}`);
+      return;
+    }
+    await ensureCaches(true);
+    await loadOfficial(type);
+  };
+  input.click();
+}
+
 async function loadOfficial(type){
   window.__lastOfficialType = type;
   await ensureCaches(true);
   let rows=[], cols=[];
   if(type==="fg"){
     rows=sortByDateTime(resFGCache);
-    cols=[{key:"estado",label:"Estado",html:r=>officialUpdateBadge(r)},{key:"fecha",label:"Fecha"},{key:"hora",label:"Hora"},{key:"jor",label:"Jornada"},{key:"local",label:"Local"},{key:"gol_local",label:"GL",html:r=>adminInput("fg",r.Id_Match,"gol_local",r.gol_local,"number")},{key:"gol_visitante",label:"GV",html:r=>adminInput("fg",r.Id_Match,"gol_visitante",r.gol_visitante,"number")},{key:"visitante",label:"Visitante"},{key:"grupo",label:"Grupo"},{key:"acciones",label:"Acciones",html:r=>isAdmin()?`<button class="green" onclick="saveOfficialResult('fg','${escapeHtml(r.Id_Match)}')">Guardar</button>`:""}];
+    cols=[{key:"estado",label:"Estado",html:r=>officialUpdateBadge(r)},{key:"fecha",label:"Fecha"},{key:"hora",label:"Hora"},{key:"jor",label:"Jornada"},{key:"local",label:"Local"},{key:"gol_local",label:"GL",html:r=>adminInput("fg",r.Id_Match,"gol_local",r.gol_local,"number")},{key:"gol_visitante",label:"GV",html:r=>adminInput("fg",r.Id_Match,"gol_visitante",r.gol_visitante,"number")},{key:"visitante",label:"Visitante"},{key:"grupo",label:"Grupo"},{key:"evidencia",label:"Evidencia",html:r=>evidenceActions("fg",r.Id_Match,r)},{key:"acciones",label:"Acciones",html:r=>isAdmin()?`<button class="green" onclick="saveOfficialResult('fg','${escapeHtml(r.Id_Match)}')">Guardar</button>`:""}];
   }
   if(type==="fe"){
     rows=sortByDateTime(resFECache);
-    cols=[{key:"estado",label:"Estado",html:r=>officialUpdateBadge(r)},{key:"fecha",label:"Fecha"},{key:"hora",label:"Hora"},{key:"jor",label:"Fase"},{key:"local",label:"Local"},{key:"gol_local",label:"GL",html:r=>adminInput("fe",r.Id_match,"gol_local",r.gol_local,"number")},{key:"gol_visitante",label:"GV",html:r=>adminInput("fe",r.Id_match,"gol_visitante",r.gol_visitante,"number")},{key:"visitante",label:"Visitante"},{key:"acciones",label:"Acciones",html:r=>isAdmin()?`<button class="green" onclick="saveOfficialResult('fe','${escapeHtml(r.Id_match)}')">Guardar</button>`:""}];
+    cols=[{key:"estado",label:"Estado",html:r=>officialUpdateBadge(r)},{key:"fecha",label:"Fecha"},{key:"hora",label:"Hora"},{key:"jor",label:"Fase"},{key:"local",label:"Local"},{key:"gol_local",label:"GL",html:r=>adminInput("fe",r.Id_match,"gol_local",r.gol_local,"number")},{key:"gol_visitante",label:"GV",html:r=>adminInput("fe",r.Id_match,"gol_visitante",r.gol_visitante,"number")},{key:"visitante",label:"Visitante"},{key:"evidencia",label:"Evidencia",html:r=>evidenceActions("fe",r.Id_match,r)},{key:"acciones",label:"Acciones",html:r=>isAdmin()?`<button class="green" onclick="saveOfficialResult('fe','${escapeHtml(r.Id_match)}')">Guardar</button>`:""}];
   }
   if(type==="tabla"){
     rows=await recalcularTablasGrupos({silent:true});
