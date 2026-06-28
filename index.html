@@ -743,12 +743,68 @@ function fgPoints(p,r){
   return {ganadorOk,marcadorOk,puntos:(ganadorOk?1:0)+(marcadorOk?2:0)};
 }
 function fePoints(p,r){
-  if(!hasOfficialScore(r)) return {ganadorOk:false,marcadorOk:false,puntos:0,pendiente:true};
-  const pw=winner(p.local,p.gol_local,p.visitante,p.gol_visitante), rw=winner(r.local,r.gol_local,r.visitante,r.gol_visitante);
-  const ganadorOk=!!pw&&!!rw&&norm(pw)===norm(rw);
-  const equiposOk=norm(p.local)===norm(r.local)&&norm(p.visitante)===norm(r.visitante);
-  const marcadorOk=equiposOk&&num(p.gol_local)!==null&&num(p.gol_visitante)!==null&&String(p.gol_local)===String(r.gol_local)&&String(p.gol_visitante)===String(r.gol_visitante);
-  return {ganadorOk,marcadorOk,puntos:(ganadorOk?1:0)+(marcadorOk?2:0)};
+
+  if(!hasOfficialScore(r)){
+    return {
+      localOk:false,
+      visitanteOk:false,
+      ganadorOk:false,
+      marcadorOk:false,
+      puntos:0,
+      pendiente:true
+    };
+  }
+
+  const localOk =
+      norm(p.local) === norm(r.local);
+
+  const visitanteOk =
+      norm(p.visitante) === norm(r.visitante);
+
+  const equipos =
+      (localOk ? 1 : 0) +
+      (visitanteOk ? 1 : 0);
+
+  const pw = winner(
+      p.local,
+      p.gol_local,
+      p.visitante,
+      p.gol_visitante
+  );
+
+  const rw = winner(
+      r.local,
+      r.gol_local,
+      r.visitante,
+      r.gol_visitante
+  );
+
+const ganadorOk =
+    localOk &&
+    visitanteOk &&
+    !!pw &&
+    !!rw &&
+    norm(pw) === norm(rw);
+
+const marcadorOk =
+    localOk &&
+    visitanteOk &&
+    num(p.gol_local) !== null &&
+    num(p.gol_visitante) !== null &&
+    Number(p.gol_local) === Number(r.gol_local) &&
+    Number(p.gol_visitante) === Number(r.gol_visitante);
+
+  return{
+      localOk,
+      visitanteOk,
+      ganadorOk,
+      marcadorOk,
+      puntos:
+          equipos +
+          (ganadorOk ? 1 : 0) +
+          (marcadorOk ? 2 : 0)
+  };
+
 }
 
 async function compareFG(){
@@ -812,11 +868,113 @@ async function compareFG(){
 
 async function compareFE(){
   await ensureCaches();
+
   const {data,error}=await db.from(T.partFE).select("*");
-  if(error){document.getElementById("compareTable").innerHTML=`<p class="bad">${error.message}</p>`;return;}
-  const map=new Map(resFECache.map(r=>[String(r.Id_match),r]));
-  const rows=sortByDateTime(filterPartRows(data||[],"id_participante").map(p=>{const r=map.get(String(p.id_match))||{}; const pts=fePoints(p,r); const hay=hasOfficialScore(r); return enrichSortData({fase:p.jor || r.jor,pronosticado:`${p.local||""} ${p.gol_local??""}-${p.gol_visitante??""} ${p.visitante||""}`,oficial:hay?`${r.local||""} ${r.gol_local}-${r.gol_visitante} ${r.visitante||""}`:"",hayOficial:hay,ganador:pts.ganadorOk,marcador:pts.marcadorOk,puntos_estimados:pts.puntos}, r);}));
-  renderTable(rows,"compareTable",[{key:"fecha",label:"Fecha"},{key:"hora",label:"Hora"},{key:"fase",label:"Fase"},{key:"pronosticado",label:"Pronosticado"},{key:"oficial",label:"Oficial"},{key:"ganador",label:"Ganador",html:r=>r.hayOficial?fmtBadge(r.ganador,1):""},{key:"marcador",label:"Marcador",html:r=>r.hayOficial?fmtBadge(r.marcador,2):""},{key:"puntos_estimados",label:"Puntos"}]);
+
+  if(error){
+    document.getElementById("compareTable").innerHTML=`<p class="bad">${error.message}</p>`;
+    return;
+  }
+
+  const map=new Map(
+    resFECache.map(r=>[String(r.Id_match),r])
+  );
+
+  const rows=sortByDateTime(
+
+    filterPartRows(data||[],"id_participante").map(p=>{
+
+      const r=map.get(String(p.id_match))||{};
+
+      const pts=fePoints(p,r);
+
+      const hay=hasOfficialScore(r);
+
+      return enrichSortData({
+
+        fase:p.jor || r.jor,
+
+        pronosticado:
+          `${p.local||""} ${p.gol_local??""}-${p.gol_visitante??""} ${p.visitante||""}`,
+
+        oficial:
+          hay
+            ? `${r.local||""} ${r.gol_local}-${r.gol_visitante} ${r.visitante||""}`
+            : "",
+
+        hayOficial:hay,
+
+        localOk:pts.localOk,
+
+        visitanteOk:pts.visitanteOk,
+
+        ganadorOk:pts.ganadorOk,
+
+        marcadorOk:pts.marcadorOk,
+
+        puntos_estimados:pts.puntos
+
+      },r);
+
+    })
+
+  );
+
+  renderTable(rows,"compareTable",[
+
+    {key:"fecha",label:"Fecha"},
+
+    {key:"hora",label:"Hora"},
+
+    {key:"fase",label:"Fase"},
+
+    {key:"pronosticado",label:"Pronosticado"},
+
+    {key:"oficial",label:"Oficial"},
+
+    {
+      key:"localOk",
+      label:"Local",
+      html:r=>r.hayOficial ? fmtBadge(r.localOk,1) : ""
+    },
+
+    {
+      key:"visitanteOk",
+      label:"Visitante",
+      html:r=>r.hayOficial ? fmtBadge(r.visitanteOk,1) : ""
+    },
+
+    {
+      key:"ganadorOk",
+      label:"Ganador",
+      html:r=>r.hayOficial ? fmtBadge(r.ganadorOk,1) : ""
+    },
+
+    {
+      key:"marcadorOk",
+      label:"Marcador",
+      html:r=>r.hayOficial ? fmtBadge(r.marcadorOk,2) : ""
+    },
+
+    {
+      key:"puntos_estimados",
+      label:"Total"
+    }
+
+  ]);
+
+  document.getElementById("compareTable").innerHTML = `
+    <div class="card" style="margin-bottom:12px;background:#fff7ed;border:1px solid #fed7aa">
+      <b>Reglas de puntuación - Fase eliminatoria</b>
+      <ul style="margin:8px 0 0 18px;padding:0">
+        <li>✅ Selección local correcta: <b>+1 punto</b>.</li>
+        <li>✅ Selección visitante correcta: <b>+1 punto</b>.</li>
+        <li>✅ Ganador correcto: <b>+1 punto</b>.</li>
+        <li>✅ Marcador exacto: <b>+2 puntos</b>.</li>
+        <li><b>Importante:</b> Los puntos por <b>Ganador</b> y <b>Marcador</b> únicamente se otorgan cuando se aciertan <b>los dos contendientes oficiales del encuentro</b>. Si uno o ambos equipos son incorrectos, esos puntos quedan anulados, aunque el ganador o el marcador coincidan.</li>
+      </ul>
+    </div>
+  ` + document.getElementById("compareTable").innerHTML;
 }
 
 async function recalcularRanking(opts={}){
