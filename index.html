@@ -154,11 +154,23 @@ function fmtBadge(ok, pts){ return ok ? `<span class="badge-ok">✓ +${pts}</spa
 function winner(local, gl, visitante, gv){ const a=num(gl), b=num(gv); if(a===null||b===null)return ""; if(a>b)return txt(local); if(b>a)return txt(visitante); return "Empate"; }
 function matchLabel(r){ return `${r?.local ?? ""} vs ${r?.visitante ?? ""}`; }
 function sortByDateTime(rows){
-  return [...(rows||[])].sort((a,b)=>{
-    const ka = `${a.fecha ?? ""} ${a.hora ?? ""} ${a.jor ?? a.jornada ?? ""}`.trim();
-    const kb = `${b.fecha ?? ""} ${b.hora ?? ""} ${b.jor ?? b.jornada ?? ""}`.trim();
-    return ka.localeCompare(kb, "es", {numeric:true});
-  });
+  function parse(fecha,hora){
+    if(!fecha) return new Date(8640000000000000);
+    if(fecha instanceof Date) return fecha;
+    fecha=String(fecha).trim();
+    let y,m,d;
+    if(/^\d{4}-\d{2}-\d{2}$/.test(fecha)){
+      [y,m,d]=fecha.split('-').map(Number);
+    }else if(/^\d{2}\/\d{2}\/\d{4}$/.test(fecha)){
+      [d,m,y]=fecha.split('/').map(Number);
+    }else{
+      const dt=new Date(fecha+(hora?' '+hora:''));
+      return isNaN(dt)?new Date(8640000000000000):dt;
+    }
+    let hh=0,mm=0; if(hora){[hh,mm]=String(hora).split(':').map(Number);} 
+    return new Date(y,m-1,d,hh||0,mm||0);
+  }
+  return [...(rows||[])].sort((a,b)=>parse(a.fecha,a.hora)-parse(b.fecha,b.hora));
 }
 function enrichSortData(row, match){
   return {
