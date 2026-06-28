@@ -754,10 +754,60 @@ function fePoints(p,r){
 async function compareFG(){
   await ensureCaches();
   const {data,error}=await db.from(T.partFG).select("*");
-  if(error){document.getElementById("compareTable").innerHTML=`<p class="bad">${error.message}</p>`;return;}
+  if(error){
+    document.getElementById("compareTable").innerHTML=`<p class="bad">${error.message}</p>`;
+    return;
+  }
+
   const map=new Map(resFGCache.map(r=>[String(r.Id_Match),r]));
-  const rows=sortByDateTime(filterPartRows(data||[],"id_part").map(p=>{const r=map.get(String(p.id_match))||{}; const pts=fgPoints(p,r); const hay=hasOfficialScore(r); return enrichSortData({grupo:p.grupo ?? r.grupo,partido:matchLabel(r),pronostico:`${p.gol_local??""}-${p.gol_visitante??""}`,oficial:hay?`${r.gol_local}-${r.gol_visitante}`:"",hayOficial:hay,ganador:pts.ganadorOk,marcador:pts.marcadorOk,puntos_estimados:pts.puntos}, r);}));
-  renderTable(rows,"compareTable",[{key:"fecha",label:"Fecha"},{key:"hora",label:"Hora"},{key:"jor",label:"Jornada"},{key:"grupo",label:"Grupo"},{key:"partido",label:"Partido"},{key:"pronostico",label:"Pronóstico"},{key:"oficial",label:"Oficial"},{key:"ganador",label:"Ganador",html:r=>r.hayOficial?fmtBadge(r.ganador,1):""},{key:"marcador",label:"Marcador",html:r=>r.hayOficial?fmtBadge(r.marcador,2):""},{key:"puntos_estimados",label:"Puntos"}]);
+
+  const rows=sortByDateTime(
+    filterPartRows(data||[],"id_part").map(p=>{
+      const r=map.get(String(p.id_match))||{};
+      const pts=fgPoints(p,r);
+      const hay=hasOfficialScore(r);
+
+      return enrichSortData({
+        grupo:p.grupo ?? r.grupo,
+
+        partido:matchLabel(r),
+
+        pronostico:
+          `${r.local||""} ${p.gol_local??""}-${p.gol_visitante??""} ${r.visitante||""}`,
+
+        oficial:
+          hay
+            ? `${r.local||""} ${r.gol_local}-${r.gol_visitante} ${r.visitante||""}`
+            : "",
+
+        hayOficial:hay,
+        ganador:pts.ganadorOk,
+        marcador:pts.marcadorOk,
+        puntos_estimados:pts.puntos
+      }, r);
+    })
+  );
+
+  renderTable(rows,"compareTable",[
+    {key:"fecha",label:"Fecha"},
+    {key:"hora",label:"Hora"},
+    {key:"jor",label:"Jornada"},
+    {key:"grupo",label:"Grupo"},
+    {key:"partido",label:"Partido"},
+    {key:"pronostico",label:"Pronóstico"},
+    {key:"oficial",label:"Oficial"},
+    {
+      key:"ganador",
+      label:"Ganador",
+      html:r=>r.hayOficial?fmtBadge(r.ganador,1):""
+    },
+    {
+      key:"marcador",
+      label:"Marcador",
+      html:r=>r.hayOficial?fmtBadge(r.marcador,2):""
+    },
+    {key:"puntos_estimados",label:"Puntos"}
+  ]);
 }
 
 async function compareFE(){
