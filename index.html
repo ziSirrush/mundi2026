@@ -151,7 +151,35 @@ const isAdmin = () => currentUser && userRole(currentUser)==="admin";
 function selectedPartId(){ if(!isAdmin()) return userId(currentUser); const v=document.getElementById("participantFilter").value; return v?Number(v):null; }
 function escapeHtml(v){ if(v===null||v===undefined)return ""; return String(v).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m])); }
 function fmtBadge(ok, pts){ return ok ? `<span class="badge-ok">✓ +${pts}</span>` : `<span class="badge-bad">✕ +0</span>`; }
-function winner(local, gl, visitante, gv){ const a=num(gl), b=num(gv); if(a===null||b===null)return ""; if(a>b)return txt(local); if(b>a)return txt(visitante); return "Empate"; }
+function winner(local, gl, visitante, gv, penalLocal=null, penalVisitante=null){
+
+    const a = num(gl);
+    const b = num(gv);
+
+    if(a===null || b===null)
+        return "";
+
+    if(a>b)
+        return txt(local);
+
+    if(b>a)
+        return txt(visitante);
+
+    const pl = num(penalLocal);
+    const pv = num(penalVisitante);
+
+    if(pl!==null && pv!==null){
+
+        if(pl>pv)
+            return txt(local);
+
+        if(pv>pl)
+            return txt(visitante);
+
+    }
+
+    return "Empate";
+}
 function matchLabel(r){ return `${r?.local ?? ""} vs ${r?.visitante ?? ""}`; }
 function sortByDateTime(rows){
   function parse(fecha,hora){
@@ -345,39 +373,159 @@ async function loadCalendar(){
 function filterPartRows(rows, col){ const id=selectedPartId(); return id ? rows.filter(r=>Number(r[col])===id) : rows; }
 
 async function loadPredictions(type){
+
   await ensureCaches();
+
   let rows=[], cols=[];
+
   if(type==="fg"){
+
     const {data,error}=await db.from(T.partFG).select("*");
-    if(error){document.getElementById("predTable").innerHTML=`<p class="bad">${error.message}</p>`;return;}
+
+    if(error){
+      document.getElementById("predTable").innerHTML=`<p class="bad">${error.message}</p>`;
+      return;
+    }
+
     const map=new Map(resFGCache.map(r=>[String(r.Id_Match),r]));
-    rows=sortByDateTime(filterPartRows(data||[],"id_part").map(p=>{
-      const r=map.get(String(p.id_match));
-      return enrichSortData({...p, partido: matchLabel(r), grupo:p.grupo ?? r?.grupo ?? ""}, r);
-    }));
-    cols=[{key:"fecha",label:"Fecha"},{key:"hora",label:"Hora"},{key:"jor",label:"Jornada"},{key:"partido",label:"Partido"},{key:"grupo",label:"Grupo"},{key:"gol_local",label:"Gol local"},{key:"gol_visitante",label:"Gol visitante"}];
+
+    rows=sortByDateTime(
+
+      filterPartRows(data||[],"id_part").map(p=>{
+
+        const r=map.get(String(p.id_match));
+
+        return enrichSortData({
+
+          ...p,
+
+          partido:matchLabel(r),
+
+          grupo:p.grupo ?? r?.grupo ?? ""
+
+        },r);
+
+      })
+
+    );
+
+    cols=[
+      {key:"fecha",label:"Fecha"},
+      {key:"hora",label:"Hora"},
+      {key:"jor",label:"Jornada"},
+      {key:"partido",label:"Partido"},
+      {key:"grupo",label:"Grupo"},
+      {key:"gol_local",label:"Gol local"},
+      {key:"gol_visitante",label:"Gol visitante"}
+    ];
+
   }
+
   if(type==="fe"){
+
     const {data,error}=await db.from(T.partFE).select("*");
-    if(error){document.getElementById("predTable").innerHTML=`<p class="bad">${error.message}</p>`;return;}
-    const map=new Map(resFECache.map(r=>[String(r.Id_match),r]));
-    rows=sortByDateTime(filterPartRows(data||[],"id_participante").map(p=>enrichSortData(p, map.get(String(p.id_match)))));
-    cols=[{key:"fecha",label:"Fecha"},{key:"hora",label:"Hora"},{key:"jor",label:"Fase"},{key:"local",label:"Local"},{key:"gol_local",label:"Gol local"},{key:"visitante",label:"Visitante"},{key:"gol_visitante",label:"Gol visitante"},{key:"penal_local",label:"Penal local"},{key:"penal_visitante",label:"Penal visitante"}];
+
+    if(error){
+      document.getElementById("predTable").innerHTML=`<p class="bad">${error.message}</p>`;
+      return;
+    }
+
+    const map=new Map(
+      resFECache.map(r=>[String(r.Id_match),r])
+    );
+
+    rows=sortByDateTime(
+
+      filterPartRows(data||[],"id_participante").map(p=>{
+
+        const r=map.get(String(p.id_match));
+
+        const hayPenales =
+          num(p.penal_local)!==null &&
+          num(p.penal_visitante)!==null;
+
+        return enrichSortData({
+
+          ...p,
+
+          partido:
+            `${p.local||""} ${p.gol_local??""}${
+              hayPenales ? ` (${p.penal_local})` : ""
+            } - ${
+              hayPenales ? `(${p.penal_visitante}) ` : ""
+            }${p.gol_visitante??""} ${p.visitante||""}`
+
+        },r);
+
+      })
+
+    );
+
+    cols=[
+      {key:"fecha",label:"Fecha"},
+      {key:"hora",label:"Hora"},
+      {key:"jor",label:"Fase"},
+      {key:"partido",label:"Pronóstico"}
+    ];
+
   }
+
   if(type==="mej3"){
+
     const {data,error}=await db.from(T.partMej3).select("*");
-    if(error){document.getElementById("predTable").innerHTML=`<p class="bad">${error.message}</p>`;return;}
+
+    if(error){
+      document.getElementById("predTable").innerHTML=`<p class="bad">${error.message}</p>`;
+      return;
+    }
+
     rows=filterPartRows(data||[],"id_part");
-    cols=[{key:"seleccion",label:"Selección"},{key:"pts",label:"PTS"},{key:"j_j",label:"JJ"},{key:"j_g",label:"JG"},{key:"j_e",label:"JE"},{key:"j_p",label:"JP"},{key:"g_f",label:"GF"},{key:"g_c",label:"GC"},{key:"dif_g",label:"DG"}];
+
+    cols=[
+      {key:"seleccion",label:"Selección"},
+      {key:"pts",label:"PTS"},
+      {key:"j_j",label:"JJ"},
+      {key:"j_g",label:"JG"},
+      {key:"j_e",label:"JE"},
+      {key:"j_p",label:"JP"},
+      {key:"g_f",label:"GF"},
+      {key:"g_c",label:"GC"},
+      {key:"dif_g",label:"DG"}
+    ];
+
   }
+
   if(type==="bonus"){
+
     const {data,error}=await db.from(T.partBonus).select("*");
-    if(error){document.getElementById("predTable").innerHTML=`<p class="bad">${error.message}</p>`;return;}
-    const bmap=new Map(bonusCache.map(b=>[String(b.id_registro),b]));
-    rows=filterPartRows(data||[],"id_part").map(p=>({pregunta: bmap.get(String(p.id_bonus))?.tipo || `Bonus ${p.id_bonus}`, respuesta: p.Respuesta}));
-    cols=[{key:"pregunta",label:"Pregunta"},{key:"respuesta",label:"Respuesta"}];
+
+    if(error){
+      document.getElementById("predTable").innerHTML=`<p class="bad">${error.message}</p>`;
+      return;
+    }
+
+    const bmap=new Map(
+      bonusCache.map(b=>[String(b.id_registro),b])
+    );
+
+    rows=filterPartRows(data||[],"id_part").map(p=>({
+
+      pregunta:
+        bmap.get(String(p.id_bonus))?.tipo || `Bonus ${p.id_bonus}`,
+
+      respuesta:p.Respuesta
+
+    }));
+
+    cols=[
+      {key:"pregunta",label:"Pregunta"},
+      {key:"respuesta",label:"Respuesta"}
+    ];
+
   }
+
   renderTable(rows,"predTable",cols);
+
 }
 
 
@@ -604,17 +752,47 @@ async function generarFaseEliminatoria(){
 }
 
 function ganadorEliminatoria(r){
-  if(!hasOfficialScore(r)) return {ganador:"", perdedor:""};
-  const gl=num(r.gol_local), gv=num(r.gol_visitante);
+
+  if(!hasOfficialScore(r))
+    return {ganador:"", perdedor:""};
+
+  const gl = num(r.gol_local);
+  const gv = num(r.gol_visitante);
+
   let localGana = null;
-  if(gl>gv) localGana = true;
-  else if(gv>gl) localGana = false;
-  else{
-    const pl=num(r.penal_local), pv=num(r.penal_visitante);
-    if(pl!==null && pv!==null && pl!==pv) localGana = pl>pv;
+
+  if(gl > gv){
+
+    localGana = true;
+
+  }else if(gv > gl){
+
+    localGana = false;
+
+  }else{
+
+    const pl = num(r.penal_local);
+    const pv = num(r.penal_visitante);
+
+    if(pl !== null && pv !== null){
+
+      if(pl > pv)
+        localGana = true;
+
+      else if(pv > pl)
+        localGana = false;
+
+    }
+
   }
-  if(localGana===null) return {ganador:"", perdedor:""};
-  return localGana ? {ganador:r.local, perdedor:r.visitante} : {ganador:r.visitante, perdedor:r.local};
+
+  if(localGana === null)
+    return {ganador:"", perdedor:""};
+
+  return localGana
+    ? {ganador:r.local, perdedor:r.visitante}
+    : {ganador:r.visitante, perdedor:r.local};
+
 }
 
 function resolverSlotLlave(slot, winners){
@@ -697,10 +875,90 @@ async function loadOfficial(type){
     rows=sortByDateTime(resFGCache);
     cols=[{key:"estado",label:"Estado",html:r=>officialUpdateBadge(r)},{key:"fecha",label:"Fecha"},{key:"hora",label:"Hora"},{key:"jor",label:"Jornada"},{key:"local",label:"Local"},{key:"gol_local",label:"GL",html:r=>adminInput("fg",r.Id_Match,"gol_local",r.gol_local,"number")},{key:"gol_visitante",label:"GV",html:r=>adminInput("fg",r.Id_Match,"gol_visitante",r.gol_visitante,"number")},{key:"visitante",label:"Visitante"},{key:"grupo",label:"Grupo"},{key:"evidencia",label:"Evidencia",html:r=>evidenceActions("fg",r.Id_Match,r)},{key:"acciones",label:"Acciones",html:r=>isAdmin()?`<button class="green" onclick="saveOfficialResult('fg','${escapeHtml(r.Id_Match)}')">Guardar</button>`:""}];
   }
-  if(type==="fe"){
-    rows=sortByDateTime(resFECache);
-    cols=[{key:"estado",label:"Estado",html:r=>officialUpdateBadge(r)},{key:"fecha",label:"Fecha"},{key:"hora",label:"Hora"},{key:"jor",label:"Fase"},{key:"local",label:"Local"},{key:"gol_local",label:"GL",html:r=>adminInput("fe",r.Id_match,"gol_local",r.gol_local,"number")},{key:"gol_visitante",label:"GV",html:r=>adminInput("fe",r.Id_match,"gol_visitante",r.gol_visitante,"number")},{key:"visitante",label:"Visitante"},{key:"evidencia",label:"Evidencia",html:r=>evidenceActions("fe",r.Id_match,r)},{key:"acciones",label:"Acciones",html:r=>isAdmin()?`<button class="green" onclick="saveOfficialResult('fe','${escapeHtml(r.Id_match)}')">Guardar</button>`:""}];
-  }
+if(type==="fe"){
+  rows=sortByDateTime(resFECache);
+  cols=[
+    {key:"estado",label:"Estado",html:r=>officialUpdateBadge(r)},
+    {key:"fecha",label:"Fecha"},
+    {key:"hora",label:"Hora"},
+    {key:"jor",label:"Fase"},
+    {key:"local",label:"Local"},
+
+    {
+      key:"gol_local",
+      label:"GL",
+      html:r=>adminInput("fe",r.Id_match,"gol_local",r.gol_local,"number")
+    },
+
+    {
+      key:"gol_visitante",
+      label:"GV",
+      html:r=>adminInput("fe",r.Id_match,"gol_visitante",r.gol_visitante,"number")
+    },
+
+    {
+      key:"penales",
+      label:"Penales",
+      html:r=>`
+        <label style="display:flex;align-items:center;gap:6px">
+          <input
+            type="checkbox"
+            id="penales_${r.Id_match}"
+            ${num(r.penal_local)!==null && num(r.penal_visitante)!==null ? "checked" : ""}
+            onchange="togglePenales('${r.Id_match}')">
+          Sí
+        </label>
+      `
+    },
+
+    {
+  key:"penal_local",
+  label:"PL",
+  html:r=>`
+    <input
+      id="of_fe_${r.Id_match}_penal_local"
+      type="number"
+      min="0"
+      value="${num(r.penal_local) ?? ""}"
+      class="mini-input"
+      ${num(r.penal_local)===null && num(r.penal_visitante)===null ? "disabled" : ""}
+    >
+  `
+},
+
+{
+  key:"penal_visitante",
+  label:"PV",
+  html:r=>`
+    <input
+      id="of_fe_${r.Id_match}_penal_visitante"
+      type="number"
+      min="0"
+      value="${num(r.penal_visitante) ?? ""}"
+      class="mini-input"
+      ${num(r.penal_local)===null && num(r.penal_visitante)===null ? "disabled" : ""}
+    >
+  `
+},
+
+    {key:"visitante",label:"Visitante"},
+
+    {
+      key:"evidencia",
+      label:"Evidencia",
+      html:r=>evidenceActions("fe",r.Id_match,r)
+    },
+
+    {
+      key:"acciones",
+      label:"Acciones",
+      html:r=>isAdmin()
+        ? `<button class="green" onclick="saveOfficialResult('fe','${escapeHtml(r.Id_match)}')">Guardar</button>`
+        : ""
+    }
+
+  ];
+}
   if(type==="tabla"){
     rows=await recalcularTablasGrupos({silent:true});
     renderGroupMiniTables(rows,"officialTable");
@@ -718,22 +976,109 @@ function adminInput(type,id,field,value,inputType){
   return `<input class="${cls}" id="of_${type}_${id}_${field}" type="${inputType}" value="${escapeHtml(val)}">`;
 }
 
+function togglePenales(id){
+
+    const enabled =
+        document.getElementById(`penales_${id}`).checked;
+
+      document.getElementById(`of_fe_${id}_penal_local`).disabled =
+      !enabled;
+
+      document.getElementById(`of_fe_${id}_penal_visitante`).disabled =
+      !enabled;
+
+    if(!enabled){
+
+        document.getElementById(`of_fe_${id}_penal_local`).value="";
+
+        document.getElementById(`of_fe_${id}_penal_visitante`).value="";
+    }
+
+}
+
 async function saveOfficialResult(type,id){
+
   if(!isAdmin()) return;
+
   const table = type==="fg" ? T.resFG : T.resFE;
   const key = type==="fg" ? "Id_Match" : "Id_match";
-  const get = field => document.getElementById(`of_${type}_${id}_${field}`)?.value ?? "";
+
+  const get = field =>
+      document.getElementById(`of_${type}_${id}_${field}`)?.value ?? "";
+
+  const penales =
+      type==="fe" &&
+      document.getElementById(`penales_${id}`)?.checked;
+
   const payload = {
-    gol_local: get("gol_local")==="" ? null : Number(get("gol_local")),
-    gol_visitante: get("gol_visitante")==="" ? null : Number(get("gol_visitante"))
+
+      gol_local:
+          get("gol_local")==="" ? null : Number(get("gol_local")),
+
+      gol_visitante:
+          get("gol_visitante")==="" ? null : Number(get("gol_visitante"))
+
   };
-  const {error}=await db.from(table).update(payload).eq(key,id);
-  if(error){ alert(error.message); return; }
+
+  if(type==="fe"){
+
+      payload.penal_local = penales
+          ? (
+              document.getElementById(`of_fe_${id}_penal_local`).value === ""
+                  ? null
+                  : Number(document.getElementById(`of_fe_${id}_penal_local`).value)
+            )
+          : null;
+
+      payload.penal_visitante = penales
+          ? (
+              document.getElementById(`of_fe_${id}_penal_visitante`).value === ""
+                  ? null
+                  : Number(document.getElementById(`of_fe_${id}_penal_visitante`).value)
+            )
+          : null;
+
+      // ==========================
+      // Validaciones de penales
+      // ==========================
+      if(penales){
+
+          if(payload.penal_local===null || payload.penal_visitante===null){
+              alert("Debe capturar ambos marcadores de penales.");
+              return;
+          }
+
+          if(payload.penal_local===payload.penal_visitante){
+              alert("La tanda de penales no puede terminar empatada.");
+              return;
+          }
+
+      }
+
+  }
+
+  const {error}=await db
+      .from(table)
+      .update(payload)
+      .eq(key,id);
+
+  if(error){
+      alert(error.message);
+      return;
+  }
+
   await ensureCaches(true);
+
   await recalcularRanking({silent:true});
-  if(type==="fg") await recalcularTablasGrupos({silent:true});
-  if(type==="fe") await actualizarLlavesSiguientes();
+
+  if(type==="fg")
+      await recalcularTablasGrupos({silent:true});
+
+  if(type==="fe")
+      await actualizarLlavesSiguientes();
+
   await loadOfficial(type);
+
 }
 function fgPoints(p,r){
   if(!hasOfficialScore(r)) return {ganadorOk:false,marcadorOk:false,puntos:0,pendiente:true};
@@ -769,14 +1114,18 @@ function fePoints(p,r){
       p.local,
       p.gol_local,
       p.visitante,
-      p.gol_visitante
+      p.gol_visitante,
+      p.penal_local,
+      p.penal_visitante
   );
 
   const rw = winner(
       r.local,
       r.gol_local,
       r.visitante,
-      r.gol_visitante
+      r.gol_visitante,
+      r.penal_local,
+      r.penal_visitante
   );
 
 const ganadorOk =
@@ -791,6 +1140,8 @@ const marcadorOk =
     visitanteOk &&
     num(p.gol_local) !== null &&
     num(p.gol_visitante) !== null &&
+    num(r.gol_local) !== null &&
+    num(r.gol_visitante) !== null &&
     Number(p.gol_local) === Number(r.gol_local) &&
     Number(p.gol_visitante) === Number(r.gol_visitante);
 
@@ -867,6 +1218,7 @@ async function compareFG(){
 }
 
 async function compareFE(){
+
   await ensureCaches();
 
   const {data,error}=await db.from(T.partFE).select("*");
@@ -890,16 +1242,32 @@ async function compareFE(){
 
       const hay=hasOfficialScore(r);
 
+      const hayPenalesPron =
+        num(p.penal_local)!==null &&
+        num(p.penal_visitante)!==null;
+
+      const hayPenalesOfi =
+        num(r.penal_local)!==null &&
+        num(r.penal_visitante)!==null;
+
       return enrichSortData({
 
         fase:p.jor || r.jor,
 
         pronosticado:
-          `${p.local||""} ${p.gol_local??""}-${p.gol_visitante??""} ${p.visitante||""}`,
+          `${p.local||""} ${p.gol_local??""}${
+            hayPenalesPron ? ` (${p.penal_local})` : ""
+          } - ${
+            hayPenalesPron ? `(${p.penal_visitante}) ` : ""
+          }${p.gol_visitante??""} ${p.visitante||""}`,
 
         oficial:
           hay
-            ? `${r.local||""} ${r.gol_local}-${r.gol_visitante} ${r.visitante||""}`
+            ? `${r.local||""} ${r.gol_local}${
+                hayPenalesOfi ? ` (${r.penal_local})` : ""
+              } - ${
+                hayPenalesOfi ? `(${r.penal_visitante}) ` : ""
+              }${r.gol_visitante} ${r.visitante||""}`
             : "",
 
         hayOficial:hay,
@@ -934,25 +1302,25 @@ async function compareFE(){
 
     {
       key:"localOk",
-      label:"Local",
+      label:"Local (+1)",
       html:r=>r.hayOficial ? fmtBadge(r.localOk,1) : ""
     },
 
     {
       key:"visitanteOk",
-      label:"Visitante",
+      label:"Visitante (+1)",
       html:r=>r.hayOficial ? fmtBadge(r.visitanteOk,1) : ""
     },
 
     {
       key:"ganadorOk",
-      label:"Ganador",
+      label:"Ganador (+1)",
       html:r=>r.hayOficial ? fmtBadge(r.ganadorOk,1) : ""
     },
 
     {
       key:"marcadorOk",
-      label:"Marcador",
+      label:"Marcador (+2)",
       html:r=>r.hayOficial ? fmtBadge(r.marcadorOk,2) : ""
     },
 
@@ -971,12 +1339,13 @@ async function compareFE(){
         <li>✅ Selección visitante correcta: <b>+1 punto</b>.</li>
         <li>✅ Ganador correcto: <b>+1 punto</b>.</li>
         <li>✅ Marcador exacto: <b>+2 puntos</b>.</li>
-        <li><b>Importante:</b> Los puntos por <b>Ganador</b> y <b>Marcador</b> únicamente se otorgan cuando se aciertan <b>los dos contendientes oficiales del encuentro</b>. Si uno o ambos equipos son incorrectos, esos puntos quedan anulados, aunque el ganador o el marcador coincidan.</li>
+        <li>⚽ Si el partido se definió por penales, estos únicamente determinan el <b>ganador</b>. El <b>marcador exacto</b> considera únicamente los goles del tiempo reglamentario (y/o tiempos extra).</li>
+        <li><b>Importante:</b> Los puntos por <b>Ganador</b> y <b>Marcador</b> únicamente se otorgan cuando se aciertan <b>los dos contendientes oficiales del encuentro</b>. Si uno o ambos equipos son incorrectos, esos puntos quedan anulados.</li>
       </ul>
     </div>
   ` + document.getElementById("compareTable").innerHTML;
-}
 
+}
 async function recalcularRanking(opts={}){
   const silent = !!opts.silent;
   if(!silent && !isAdmin()) return;
